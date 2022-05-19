@@ -6,9 +6,10 @@ import json
 
 class VKUser:
     VK_HOST = 'https://api.vk.com/method/'
-    TOKEN = 'a67f00c673c3d4b12800dd0ba29579ec56d804f3c5f3bbcef5328d4b3981fa5987b951cf2c8d8b24b9abd'
+    TOKEN = input('Введите токен VK: ')
     VERSION = '5.131'
     user_id = input('Введите id пользователя: ')
+    album_id = input('Из какого альбома загрузить фото?\nПрофиль, Стена или Сохраненные: ')
     ya_token = input('Введите токен Яндекс.Диска: ')
     YA_HOST = 'https://cloud-api.yandex.net:443'
     photos_dict = {}
@@ -21,6 +22,17 @@ class VKUser:
             'v': self.VERSION
         }
 
+    def _get_album_id(self):
+        answer = {'profile': ['профиль', 'проф', 'профиля', 'пр'],
+                  'wall': ['стена', 'стен', 'стены', 'ст'],
+                  'saved': ['сохраненное', 'сохраненные', 'сохран', 'сох']}
+        for eng, rus in answer.items():
+            for word in rus:
+                if self.album_id.lower() == word.lower():
+                    return eng
+        else:
+            return print('Такого альбома не существует')
+
     def _get_user_id(self):
         try:
             user_id = self.user_id
@@ -30,7 +42,8 @@ class VKUser:
                 'fields': 'id'
             }
             id_response = requests.get(request, params={**self.params, **request_params}).json()
-            self.folder_name = f'{id_response["response"][0]["first_name"]} {id_response["response"][0]["last_name"]}'
+            self.folder_name = f'{id_response["response"][0]["first_name"]} ' \
+                               f'{id_response["response"][0]["last_name"]} {self._get_album_id().capitalize()}'
             return int(id_response['response'][0]['id'])
         except Exception:
             print('Пользователь не найден')
@@ -40,13 +53,17 @@ class VKUser:
         request = self.VK_HOST + 'photos.get'
         request_params = {
             'owner_id': f'{self._get_user_id()}',
-            'album_id': 'profile',
+            'album_id': f'{self._get_album_id()}',
             'extended': 1,
             'count': 1000
         }
         try:
             response = requests.get(request, params={**self.params, **request_params}).json()
-            for photo in response['response']['items']:
+            count_photos = int(input(f'Найдено {response["response"]["count"]} фото.\n'
+                                     f'Введите количество фотографий для загрузки: '))
+            request_params['count'] = count_photos
+            response_by_count = requests.get(request, params={**self.params, **request_params}).json()
+            for photo in response_by_count['response']['items']:
                 self.photos_dict[f'{photo["id"]}'] = {f'{photo["sizes"][-1]["url"]}': f'{photo["likes"]["count"]}'}
                 self.json_struct.append({'file_name': f'{photo["likes"]["count"]}.jpg',
                                          f'size': f'{photo["sizes"][-1]["type"]}'})
@@ -83,7 +100,7 @@ class VKUser:
                 path = f'/{self.folder_name}/{str(likes)}.jpg'
                 url = f'{self.YA_HOST}/v1/disk/resources/upload/'
                 headers = self.get_headers()
-                params = {'path': path, 'url': link}
+                params = {'path': path, 'url': f'{link}'}
                 response = requests.post(url=url, headers=headers, params=params)
                 status_code = response.status_code
             if status_code == 202:
